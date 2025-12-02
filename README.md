@@ -25,6 +25,7 @@
 | 🐕 유기견 입양 소요 기간 분석 | Logistic Regressor, Neural Network | **[미리 보기](#7-유기견-입양-소요-기간-분석)** | [상세 보기](./7_pet_adoption_duration_analysis/) |
 | 💳 신용카드 이상거래 분류 | Logistic Regressor, KNN, Linear Discriminant Analysis | **[미리 보기](#8-신용카드-이상거래-탐지)** | [상세 보기](./8_creditcard_fraud_detection/) |
 | ⚡ 공조기기 전력 사용 상태 분석 | Random Forest Classifier | **[미리 보기](#9-공조기기-전력-사용-상태-분석)** | [상세 보기](./9_hvac_soh_prediction/) |
+| ⚽ K리그 경기 내 최종 패스 좌표 예측 | 모델 선정 전 | **[미리 보기](#10-K리그-경기-내-최종-패스-좌표-예측)** | [상세 보기](./10_kleague_final_pass_prediction/) |
 
 ---
 
@@ -152,6 +153,15 @@
 - 반면, 주의(label=2) 클래스에서는 오분류가 다수 발생해, 실제 현장에서 주의 구간 미탐지 시 설비 조치가 지연될 수 있음을 확인
 - 최종적으로 모델 기반 SOH 신호등 알람 설계를 제안하며, 다중공선성·센서군 특성상 Feature Importance 기반 전처리 + Domain Expert 협업이 필수임을 도출
 
+---
+
+### 10. K리그 경기 내 최종 패스 좌표 예측
+> 현재 진행 중
+
+**핵심 내용**
+- 현재 진행 중
+
+---
 
 ## 향후 계획
-- `10. 가스 공급량 예측 모델링` 데이터 확인 예정
+- `10. K리그 경기 내 최종 패스 좌표 예측 모델링` 데이터 확인 예정
