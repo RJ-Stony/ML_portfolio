@@ -16,16 +16,16 @@
 
 | 프로젝트 주제 | 주요 기법 | 미리 보기 | 링크 |
 |:----------|:-----------|:---------|:-----|
-| 👕 의류 판매량 예측 | Darts RNNModel(LSTM), Random Forest Regressor | **[미리 보기](#1-의류-판매량-예측)** | [상세 보기](./1_apparel_sales_forecasting/) |
-| 🏥 당뇨 환자 재입원 예측 | LightGBM Classifier, Optuna | **[미리 보기](#2-당뇨-환자-재입원-예측)** | [상세 보기](./2_diabetes_readmission_prediction/) |
-| 👩🏻‍👦🏻 부모와 자녀의 IQ 상관 분석 | OLS Regression, Linear Regression | **[미리 보기](#3-부모와-자녀의-iq-상관-분석)** | [상세 보기](./3_parent_child_iq_correlation/) |
-| ☁️ 공기질 데이터 분석 | 각종 Regressor, Support Vector Machine | **[미리 보기](#4-공기질-데이터-분석)** | [상세 보기](./4_air_quality_humidity_regression/) |
-| 🏥 유방암 환자 분류 | 각종 Classifier, KNN, Linear Discriminant Analysis | **[미리 보기](#5-유방암-환자-및-6-흡연-여부-분류)** | [상세 보기](./5_breast_cancer_classification/) |
-| 😮‍💨 흡연 여부 분류 | 각종 Classifier, KNN, Linear Discriminant Analysis | **[미리 보기](#5-유방암-환자-및-6-흡연-여부-분류)** | [상세 보기](./6_smoking_status_classification/) |
-| 🐕 유기견 입양 소요 기간 분석 | Logistic Regressor, Neural Network | **[미리 보기](#7-유기견-입양-소요-기간-분석)** | [상세 보기](./7_pet_adoption_duration_analysis/) |
-| 💳 신용카드 이상거래 분류 | Logistic Regressor, KNN, Linear Discriminant Analysis | **[미리 보기](#8-신용카드-이상거래-탐지)** | [상세 보기](./8_creditcard_fraud_detection/) |
-| ⚡ 공조기기 전력 사용 상태 분석 | Random Forest Classifier | **[미리 보기](#9-공조기기-전력-사용-상태-분석)** | [상세 보기](./9_hvac_soh_prediction/) |
-| ⚽ K리그 경기 내 최종 패스 좌표 예측 | 모델 선정 전 | **[미리 보기](#10-K리그-경기-내-최종-패스-좌표-예측)** | [상세 보기](./10_kleague_final_pass_prediction/) |
+| 👕 의류 판매량 예측 | Darts RNNModel(LSTM), Random Forest Regressor | **[미리 보기](#1-의류-판매량-예측)** | [상세 보기](./01_apparel_sales_forecasting/) |
+| 🏥 당뇨 환자 재입원 예측 | LightGBM Classifier, Optuna | **[미리 보기](#2-당뇨-환자-재입원-예측)** | [상세 보기](./02_diabetes_readmission_prediction/) |
+| 👩🏻‍👦🏻 부모와 자녀의 IQ 상관 분석 | OLS Regression, Linear Regression | **[미리 보기](#3-부모와-자녀의-iq-상관-분석)** | [상세 보기](./03_parent_child_iq_correlation/) |
+| ☁️ 공기질 데이터 분석 | 각종 Regressor, Support Vector Machine | **[미리 보기](#4-공기질-데이터-분석)** | [상세 보기](./04_air_quality_humidity_regression/) |
+| 🏥 유방암 환자 분류 | 각종 Classifier, KNN, Linear Discriminant Analysis | **[미리 보기](#5-유방암-환자-및-6-흡연-여부-분류)** | [상세 보기](./05_breast_cancer_classification/) |
+| 😮‍💨 흡연 여부 분류 | 각종 Classifier, KNN, Linear Discriminant Analysis | **[미리 보기](#5-유방암-환자-및-6-흡연-여부-분류)** | [상세 보기](./06_smoking_status_classification/) |
+| 🐕 유기견 입양 소요 기간 분석 | Logistic Regressor, Neural Network | **[미리 보기](#7-유기견-입양-소요-기간-분석)** | [상세 보기](./07_pet_adoption_duration_analysis/) |
+| 💳 신용카드 이상거래 분류 | Logistic Regressor, KNN, Linear Discriminant Analysis | **[미리 보기](#8-신용카드-이상거래-탐지)** | [상세 보기](./08_creditcard_fraud_detection/) |
+| ⚡ 공조기기 전력 사용 상태 분석 | Random Forest Classifier | **[미리 보기](#9-공조기기-전력-사용-상태-분석)** | [상세 보기](./09_hvac_soh_prediction/) |
+| ⚽ 경기 내 최종 패스 좌표 예측 | 모델 선정 전 | **[미리 보기](#10-K리그-경기-내-최종-패스-좌표-예측)** | [상세 보기](./10_kleague_final_pass_prediction/) |
 
 ---
 
@@ -34,7 +34,7 @@
 ### 1. 의류 판매량 예측
 > LSTM과 RandomForest를 이용한 시계열 데이터 분석
 <p align="center">
-  <img src="./1_apparel_sales_forecasting/report.svg" width="500"/>
+  <img src="./01_apparel_sales_forecasting/report.svg" width="500"/>
 </p>
 
 **핵심 내용**
@@ -49,7 +49,7 @@
 ### 2. 당뇨 환자 재입원 예측
 > LightGBM과 환자의 입원 관련 정보를 이용한 재입원 가능성 예측
 <p align="center">
-  <img src="./2_diabetes_readmission_prediction/report.svg" width="500"/>
+  <img src="./02_diabetes_readmission_prediction/report.svg" width="500"/>
 </p>
 
 **핵심 내용**
@@ -64,7 +64,7 @@
 ### 3. 부모와 자녀의 IQ 상관 분석
 > OLS와 LinearRegression을 이용한 어머니와 자녀의 IQ 상관 분석
 <p align="center">
-  <img src="./3_parent_child_iq_correlation/report.svg" width="500"/>
+  <img src="./03_parent_child_iq_correlation/report.svg" width="500"/>
 </p>
 
 **핵심 내용**
@@ -79,7 +79,7 @@
 ### 4. 공기질 데이터 분석
 > 다양한 Regression 기법을 이용한 공기질 데이터 분석
 <p align="center">
-  <img src="./4_air_quality_humidity_regression/report.svg" width="500"/>
+  <img src="./04_air_quality_humidity_regression/report.svg" width="500"/>
 </p>
 
 **핵심 내용**
@@ -94,7 +94,7 @@
 ### 5. 유방암 환자 및 6. 흡연 여부 분류
 > 다양한 Classifier 모델을 이용한 유방암 환자/흡연 여부 분류
 <p align="center">
-  <img src="./5_breast_cancer_classification/report.svg" width="500"/>
+  <img src="./05_breast_cancer_classification/report.svg" width="500"/>
 </p>
 
 **핵심 내용(유방암)**
@@ -113,7 +113,7 @@
 ### 7. 유기견 입양 소요 기간 분석
 > Logistic Regression과 Neural Network를 이용한 유기견 입양 소요 기간 분석
 <p align="center">
-  <img src="./7_pet_adoption_duration_analysis/report.svg" width="500"/>
+  <img src="./07_pet_adoption_duration_analysis/report.svg" width="500"/>
 </p>
 
 **핵심 내용**
@@ -128,7 +128,7 @@
 ### 8. 신용카드 이상거래 탐지
 > Under-Sampling과 Linear Discriminant Analysis를 이용한 신용카드 이상 거래 탐지
 <p align="center">
-  <img src="./8_creditcard_fraud_detection/report.svg" width="500"/>
+  <img src="./08_creditcard_fraud_detection/report.svg" width="500"/>
 </p>
 
 **핵심 내용**
@@ -143,7 +143,7 @@
 ### 9. 공조기기 전력 사용 상태 분석
 > Random Forest Classifier를 이용한 공장 설비의 SOH(State of Health) 예측
 <p align="center">
-  <img src="./9_hvac_soh_prediction/report.svg" width="500"/>
+  <img src="./09_hvac_soh_prediction/report.svg" width="500"/>
 </p>
 
 **핵심 내용**
