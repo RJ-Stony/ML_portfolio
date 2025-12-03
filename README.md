@@ -25,7 +25,7 @@
 | 🐕 유기견 입양 소요 기간 분석 | Logistic Regressor, Neural Network | **[미리 보기](#7-유기견-입양-소요-기간-분석)** | [상세 보기](./07_pet_adoption_duration_analysis/) |
 | 💳 신용카드 이상거래 분류 | Logistic Regressor, KNN, Linear Discriminant Analysis | **[미리 보기](#8-신용카드-이상거래-탐지)** | [상세 보기](./08_creditcard_fraud_detection/) |
 | ⚡ 공조기기 전력 사용 상태 분석 | Random Forest Classifier | **[미리 보기](#9-공조기기-전력-사용-상태-분석)** | [상세 보기](./09_hvac_soh_prediction/) |
-| ⚽ 경기 내 최종 패스 좌표 예측 | 모델 선정 전 | **[미리 보기](#10-K리그-경기-내-최종-패스-좌표-예측)** | [상세 보기](./10_kleague_final_pass_prediction/) |
+| ⚽ 경기 내 최종 패스 좌표 예측 | Transformer, LSTM 기반 모델 적용 예정 | **[미리 보기](#10-K리그-경기-내-최종-패스-좌표-예측)** | [상세 보기](./10_kleague_final_pass_prediction/) |
 
 ---
 
@@ -164,4 +164,4 @@
 ---
 
 ## 향후 계획
-- `10. K리그 경기 내 최종 패스 좌표 예측 모델링` 데이터 확인 예정
+- `10. K리그 경기 내 최종 패스 좌표 예측 모델링` Feature Engineering 예정
