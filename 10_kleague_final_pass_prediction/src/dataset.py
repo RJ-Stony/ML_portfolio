@@ -1,158 +1,151 @@
-import pandas as pd
-import numpy as np
 import torch
+import numpy as np
+import pandas as pd
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
-from utils import simplify_event, simplify_result, event2idx, result2idx
+from utils import event2idx, result2idx, simplify_event, simplify_result
 
-"""
-- 수집된 축구 경기 데이터(DataFrame)를 모델이 학습할 수 있는 형태(Tensor)로 변환
-1. build_episode_sequence: 하나의 득점 시퀀스(에피소드)를 받아 Feature들 추출
-2. EpisodeDataset: PyTorch DataLoader에서 사용할 수 있는 Dataset 클래스
-3. collate_fn: 길이가 다른 시퀀스들을 배치(Batch)로 묶을 때 패딩(Padding) 처리
-"""
-
-def build_episode_sequence(g: pd.DataFrame, for_train: bool = True):
+class EpisodeHybridDataset(Dataset):
     """
-    하나의 게임 에피소드(g)를 입력받아 모델 입력용 Feature들 생성
+    [Hybrid Dataset 클래스]
+    - 딥러닝 모델에 주입할 데이터를 정의하고 가공하는 역할
+    - 시계열 데이터(LSTM용)와 요약 정보(MLP용)를 함께 제공함
     
-    Args:
-        g (pd.DataFrame): 한 에피소드(골이 나오기 전까지의 일련의 이벤트들)의 데이터프레임
-        for_train (bool): 학습용이면 타겟값(Goal 좌표)을 반환하고, 아니면 None 반환
+    1. 시퀀스 데이터: 선수들의 움직임, 패스 등 시간 순서가 있는 12가지 정보
+    2. 에피소드 피처: 이 공격 시도의 전체적인 특징 (패스 비율, 총 이동거리 등)
+    """
+    def __init__(self, df_events, df_episode, max_len=270):
+        self.max_len = max_len
         
-    Returns:
-        feats (np.array): (L, 12) 형태의 수치형 특징 벡터들
-        event_idx (np.array): (L,) 형태의 이벤트 타입 인덱스
-        result_idx (np.array): (L,) 형태의 결과 타입 인덱스
-        target (np.array): (2,) 형태의 정답 좌표 (x, y) - 학습용일 때만 존재
-    """
-    # 인덱스 초기화 및 복사 (원본 데이터 보존)
-    g = g.reset_index(drop=True).copy()
-    
-    # 데이터가 너무 짧으면(2개 미만) 시퀀스로서 의미가 없으므로 무시
-    if len(g) < 2:
-        return None, None, None, None
-
-    # 1. 위치 및 시간 정보 추출
-    sx = g["start_x"].values  # 시작 x 좌표
-    sy = g["start_y"].values  # 시작 y 좌표
-    t  = g["time_seconds"].values  # 경기 시간(초)
-
-    # 2. 변화량 계산 - 속도나 방향성을 알기 위함
-    # dx, dy: 이전 위치와의 차이 (이동 거리)
-    dx = np.diff(sx, prepend=sx[0])
-    dy = np.diff(sy, prepend=sy[0])
-    dist = np.sqrt(dx**2 + dy**2)  # 이동 거리(유클리드 거리)
-    angle = np.arctan2(dy, dx)     # 이동 각도 (라디안)
-
-    # dt: 이전 이벤트와의 시간 차이
-    dt = np.diff(t, prepend=t[0])
-    dt[dt < 0] = 0  # 시간 차이는 음수가 될 수 없으므로 0으로 클리핑
-
-    # 3. 누적 이동량 계산 - 에피소드 시작부터 현재까지 얼마나 이동했는지
-    cum_dx = np.cumsum(dx)
-    cum_dy = np.cumsum(dy)
-    move_norm = np.sqrt(cum_dx**2 + cum_dy**2) # 시작점으로부터의 직선 거리
-
-    # 4. 시퀀스 내의 상대적 위치 계산
-    T = len(g)
-    step_idx = np.arange(T)
-    # 0~1 사이로 정규화 (초반인지 후반인지 정보를 주기 위함)
-    step_idx_norm = step_idx / (T - 1) if T > 1 else np.zeros(T)
-
-    # 5. 시간 정규화 (에피소드 내에서 흐른 시간 비율)
-    t_min, t_max = t.min(), t.max()
-    time_rel = (t - t_min) / (t_max - t_min) if t_max > t_min else np.zeros(T)
-
-    # 6. 정규화(Norm) 수행
-    # 좌우 105m, 상하 68m 경기장 크기를 기준으로 0~1 근처 값으로 스케일링
-    sx_norm = sx / 105.0
-    sy_norm = sy / 68.0
-    dx_norm = dx / 40.0       # EDA 결과상, 한 번 이동 시 40m 이상 이동하는 경우는 드물기 때문에 40m로 클리핑
-    dy_norm = dy / 40.0
-    dist_norm = dist / 40.0
-    angle_norm = angle / np.pi          # 각도는 -pi ~ pi 사이이므로 pi로 나눔
-    dt_norm = np.clip(dt / 3.0, 0, 1)   # EDA 결과상, 이벤트 간 간격은 보통 3초로, 해당 기준으로 클리핑
-    cum_dx_norm = cum_dx / 60.0
-    cum_dy_norm = cum_dy / 60.0
-    move_norm_norm = move_norm / 60.0
-
-    # 7. 수치형 피쳐 합치기 (Feature Stacking) -> (Time, 12)
-    feats = np.stack([
-        sx_norm, sy_norm, dx_norm, dy_norm, dist_norm,
-        angle_norm, dt_norm, cum_dx_norm, cum_dy_norm,
-        move_norm_norm, step_idx_norm, time_rel
-    ], axis=1).astype("float32")
-
-    # 8. 범주형 데이터(이벤트 타입) 처리
-    # 이미 'event_s' 컬럼이 있으면 바로 쓰고, 없으면 simplify_event로 변환 후 인덱싱
-    if "event_s" in g.columns:
-        event_idx = g["event_s"].apply(lambda x: event2idx[x]).values.astype("int64")
-    else:
-        tmp_event = g["type_name"].astype(str).apply(simplify_event)
-        event_idx = tmp_event.apply(lambda x: event2idx[x]).values.astype("int64")
-
-    # 9. 범주형 데이터(결과 타입) 처리
-    if "result_s" in g.columns:
-        result_idx = g["result_s"].apply(lambda x: result2idx[x]).values.astype("int64")
-    else:
-        tmp_result = g["result_name"].astype(str).apply(simplify_result)
-        result_idx = tmp_result.apply(lambda x: result2idx[x]).values.astype("int64")
-
-    # 10. 정답(Target) 추출 (학습용인 경우에만)
-    # 마지막 이벤트 이후 패스가 도달한 좌표(end_x, end_y)가 맞혀야 할 정답
-    target = None
-
-    if for_train:
-        ex = g["end_x"].values[-1] / 105.0  # 정답도 0~1 사이로 정규화
-        ey = g["end_y"].values[-1] / 68.0
-        target = np.array([ex, ey], dtype="float32")
-
-    return feats, event_idx, result_idx, target
-
-class EpisodeDataset(Dataset):
-    """
-    PyTorch의 Dataset 클래스를 상속받아, 
-    데이터 로더가 인덱스(idx)로 데이터에 접근할 수 있게 해줍니다.
-    """
-    def __init__(self, seqs, evs, rss, tgts):
-        # seqs: 수치형 피쳐 시퀀스 리스트
-        # evs: 이벤트 인덱스 시퀀스 리스트
-        # rss: 결과 인덱스 시퀀스 리스트
-        # tgts: 정답(좌표) 리스트
-        self.seqs = seqs
-        self.evs = evs
-        self.rss = rss
-        self.tgts = tgts
+        # 경기 에피소드(공격 시도)별로 데이터 그룹화
+        # -> 하나의 공격 작업을 하나의 샘플로 만들기 위함
+        self.groups = list(df_events.groupby("game_episode"))
+        
+        # 에피소드 ID로 요약 피처를 빠르게 찾기 위해 인덱스 설정
+        self.epi_feat_map = df_episode.set_index("game_episode")
+        
+        # feature_engineering.py에서 만든 7가지 요약 통계량 컬럼명
+        self.epi_feat_cols = [
+            "epi_len", "ratio_pass", "ratio_carry", 
+            "cum_dx", "cum_dy", "movement_norm", "angle_std"
+        ]
 
     def __len__(self):
-        # 전체 데이터 개수(에피소드 개수) 반환
-        return len(self.seqs)
+        # 전체 데이터셋의 샘플 개수 반환
+        return len(self.groups)
 
     def __getitem__(self, idx):
-        # idx 번째 데이터(에피소드)를 찾아 텐서(Tensor)로 변환하여 반환
-        seq = torch.tensor(self.seqs[idx])
-        ev  = torch.tensor(self.evs[idx])
-        rs  = torch.tensor(self.rss[idx])
-        tgt = torch.tensor(self.tgts[idx])
-        # seq.size(0)은 시퀀스의 길이(Time step 수)
-        return seq, ev, rs, seq.size(0), tgt
+        # idx번째 에피소드 데이터를 가져와서 텐서(Tensor)로 변환
+        game_episode, g = self.groups[idx]
+        
+        # 1. 시퀀스 데이터 전처리 (시간 흐름에 따른 데이터)
+        g = g.sort_values(["time_seconds", "action_id"])
+        
+        # (1) 기본 좌표 및 시간 정보 추출
+        sx = g["start_x"].values
+        sy = g["start_y"].values
+        t = g["time_seconds"].values
+        
+        # (2) 변화량 계산 (속도 및 방향 정보)
+        # 이전 위치와의 차이를 구해 선수가 얼마나 빠르게, 어느 방향으로 움직였는지 파악
+        dx = g["start_x"].diff().fillna(0).values
+        dy = g["start_y"].diff().fillna(0).values
+        dist = np.sqrt(dx**2 + dy**2) # 이동 거리
+        angle = np.arctan2(dy, dx)    # 이동 방향 (라디안 각도)
+        
+        # (3) 시간 차이 (이벤트 간 간격)
+        dt = g["time_seconds"].diff().fillna(0).values
+        
+        # (4) 누적 이동량 (공격 시작부터 현재까지 총 이동)
+        # 공격이 얼마나 진행되었는지 문맥 파악 용도
+        cum_dx = np.cumsum(dx)
+        cum_dy = np.cumsum(dy)
+        move_norm = np.sqrt(cum_dx**2 + cum_dy**2)
+        
+        # (5) 상대적 위치 및 시간 정보 (0~1 사이 값)
+        # 공격의 초반부인지 후반부인지 모델에게 힌트 제공
+        T = len(g)
+        step_idx_norm = np.arange(T) / (T - 1) if T > 1 else np.zeros(T)
+        
+        t_min, t_max = t.min(), t.max()
+        time_rel = (t - t_min) / (t_max - t_min) if t_max > t_min else np.zeros(T)
 
-def collate_fn(batch):
+        # (6) 데이터 정규화 (Normalization)
+        # 경기장 크기(105x68) 등 큰 숫자를 0~1 근처의 작은 숫자로 변환
+        # -> 딥러닝 모델 학습 속도 향상 및 안정적 수렴 유도
+        sx_n = sx / 105.0
+        sy_n = sy / 68.0
+        dx_n = dx / 40.0        # 한 번에 40m 이상 이동하는 경우는 드물어서 40으로 나눔
+        dy_n = dy / 40.0
+        dist_n = dist / 40.0
+        angle_n = angle / np.pi # 각도는 -pi ~ pi 범위이므로 pi로 나눔
+        dt_n = np.clip(dt / 3.0, 0, 1) # 이벤트 간격 3초 넘으면 그냥 1로 통일 (Clip)
+        cum_dx_n = cum_dx / 60.0
+        cum_dy_n = cum_dy / 60.0
+        move_n = move_norm / 60.0
+        
+        # (7) 12가지 특징을 하나로 합침 (Feature Stacking) -> [시간길이, 12]
+        seq = np.stack([
+            sx_n, sy_n, dx_n, dy_n, dist_n, angle_n, dt_n,
+            cum_dx_n, cum_dy_n, move_n, step_idx_norm, time_rel
+        ], axis=1).astype("float32")
+        
+        # (8) 범주형 데이터(이벤트 종류, 결과) 처리
+        # 문자열을 미리 약속된 정수 인덱스로 변환 (Pass -> 8, Success -> 2 등)
+        if "event_s" in g.columns:
+            ev = g["event_s"].map(event2idx).fillna(event2idx["Misc"]).values.astype("int64")
+        else:
+            ev = g["type_name"].apply(simplify_event).map(event2idx).fillna(event2idx["Misc"]).values.astype("int64")
+            
+        if "result_s" in g.columns:
+            rs = g["result_s"].map(result2idx).fillna(result2idx["None"]).values.astype("int64")
+        else:
+            rs = g["result_name"].apply(simplify_result).map(result2idx).fillna(result2idx["None"]).values.astype("int64")
+
+        # 2. 에피소드 요약 정보 가져오기 (전역 문맥)
+        # Feature Engineering 단계에서 미리 구해둔 통계값들을 조회
+        if game_episode in self.epi_feat_map.index:
+            row = self.epi_feat_map.loc[game_episode]
+            cluster_id = int(row["cluster_id"]) # 공격 스타일 그룹 ID
+            epi_feats = row[self.epi_feat_cols].values.astype("float32")
+        else:
+            # 정보가 없는 경우 0으로 채움 (예외 처리)
+            cluster_id = 0
+            epi_feats = np.zeros(len(self.epi_feat_cols), dtype="float32")
+
+        # 3. 정답 데이터 (Target)
+        # 모델이 맞춰야 할 최종 패스의 도착 좌표 (0~1 정규화)
+        target_x = g["end_x"].values[-1] / 105.0
+        target_y = g["end_y"].values[-1] / 68.0
+        target = np.array([target_x, target_y], dtype="float32")
+
+        return (torch.tensor(seq), 
+                torch.tensor(ev), 
+                torch.tensor(rs), 
+                torch.tensor(cluster_id), 
+                torch.tensor(epi_feats), 
+                torch.tensor(target))
+
+def collate_hybrid(batch):
     """
-    배치(Batch) 처리를 위한 함수
-    데이터마다 시퀀스 길이가 다르기 때문에, 이를 맞춰주기 위해 패딩(Padding) 사용
+    [배치 데이터 처리 함수]
+    - 여러 개의 샘플을 묶어서 하나의 배치(Batch)로 만듦
+    - 샘플마다 시퀀스 길이(이벤트 개수)가 다르므로, 길이를 맞추는 작업(Padding) 수행
     """
-    # batch는 (seq, ev, rs, lengths, tgt) 튜플들의 리스트
-    seqs, evs, rss, lengths, tgts = zip(*batch)
+    seqs, evs, rss, clusters, epi_feats, targets = zip(*batch)
     
-    lengths = torch.tensor(lengths)
-    tgts = torch.stack(tgts) # 정답(좌표)은 그냥 쌓으면 됨
+    # 각 샘플의 원래 길이 기록 (나중에 LSTM이 패딩 무시할 때 사용)
+    lengths = torch.tensor([len(s) for s in seqs])
     
-    # pad_sequence: 길이가 다른 시퀀스 뒤에 0을 채워서 길이 맞추기
-    # batch_first=True -> (Batch, Time, Feature) 형태로 반환
-    seqs_p = pad_sequence(seqs, batch_first=True)
-    evs_p  = pad_sequence(evs, batch_first=True, padding_value=0)
-    rss_p  = pad_sequence(rss, batch_first=True, padding_value=0)
+    # 패딩(Padding): 가장 긴 샘플 길이에 맞춰 짧은 샘플들의 뒷부분을 0으로 채움
+    # batch_first=True: (배치크기, 시간, 특징) 순서로 정렬
+    seqs_pad = pad_sequence(seqs, batch_first=True)
+    evs_pad = pad_sequence(evs, batch_first=True, padding_value=0)
+    rss_pad = pad_sequence(rss, batch_first=True, padding_value=0)
     
-    return seqs_p, evs_p, rss_p, lengths, tgts
+    # 나머지 데이터들은 길이가 고정되어 있으므로 단순히 쌓음(Stack)
+    clusters = torch.stack(clusters)
+    epi_feats = torch.stack(epi_feats)
+    targets = torch.stack(targets)
+    
+    return seqs_pad, evs_pad, rss_pad, lengths, clusters, epi_feats, targets

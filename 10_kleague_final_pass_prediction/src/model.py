@@ -3,109 +3,113 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from utils import event2idx, result2idx
 
-"""
-- 시퀀스 데이터를 받아 최종 패스의 위치를 예측하는 딥러닝 모델 정의
-- LSTM 기반으로 하며, 마지막 K개 이벤트의 정보를 활용
-"""
-
-class FinalPassLSTMWithLastK(nn.Module):
+class HybridFinalPassLSTM(nn.Module):
     """
-    LSTM 사용하여 시계열 데이터 처리하고, 마지막 K개 은닉 상태(Hidden State) 사용해 최종 예측 수행
+    [하이브리드 딥러닝 모델]
+    - 시간 순서 데이터(LSTM)와 통계적 요약 정보(Linear)를 결합하여 예측 성능을 높임
+    
+    1. Bi-LSTM: 과거와 미래 방향을 모두 살펴서 전체적인 맥락 파악
+    2. Last-K MLP: 골이 터지기 직전(마지막 K개) 상황을 집중 분석
+    3. Global Features: 공격 스타일(클러스터 ID) 같은 거시적 정보 반영
     """
-    def __init__(self, num_feats=12, event_emb_dim=6, result_emb_dim=3, hidden_dim=96, k_last=3, num_layers=1):
+    def __init__(self, 
+                 num_feats=12, 
+                 event_emb_dim=6, 
+                 result_emb_dim=3,
+                 cluster_emb_dim=4, 
+                 epi_feat_dim=7, 
+                 hidden_dim=128, 
+                 k_last=3, 
+                 num_layers=1):
         super().__init__()
         
-        # 1. 임베딩 레이어 (Embedding Layer)
-        # 범주형 데이터(이벤트 종류, 결과 종류)를 Dense Vector로 변환
-        # 예: 'Pass' 단어 하나를 [0.1, -0.5, ...] 같은 특징 벡터로 바꾸는 과정
+        # 1. 임베딩 레이어 (Embeddings)
+        # 'Pass', 'Shot' 같은 문자열 카테고리를 숫자로 된 벡터(Vector)로 변환
+        # -> 모델이 단어의 의미를 학습할 수 있게 됨
         self.event_emb = nn.Embedding(len(event2idx), event_emb_dim)
         self.result_emb = nn.Embedding(len(result2idx), result_emb_dim)
+        self.cluster_emb = nn.Embedding(5, cluster_emb_dim) # 5가지 공격 스타일
         
-        # LSTM에 들어갈 입력 차원 계산 (수치형 피쳐 + 이벤트 임베딩 + 결과 임베딩)
+        # LSTM에 들어갈 입력 크기 = 수치형 피처 + 이벤트 벡터 + 결과 벡터
         input_dim = num_feats + event_emb_dim + result_emb_dim
 
-        # 2. LSTM 레이어
-        # 시계열 데이터를 순차적으로 처리하여 각 시점의 은닉 상태(Hidden State) 계산
-        # batch_first=True -> 입력/output의 첫 차원이 batch 차원이 되도록 함
-        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True)
+        # 2. Bi-LSTM (양방향 LSTM)
+        # 데이터를 정방향, 역방향으로 모두 읽어서 앞뒤 문맥을 완벽히 파악함
+        self.lstm = nn.LSTM(input_size=input_dim, 
+                            hidden_size=hidden_dim, 
+                            num_layers=num_layers, 
+                            batch_first=True,
+                            bidirectional=True) # 양방향 True
         
-        # 마지막 K개 스텝만 더 집중해서 볼 것
         self.k_last = k_last
         
-        # 3. Last-K 처리용 MLP
-        # 마지막 K개 히든 스테이트 일렬로 펼쳐서 정보 압축/가공
+        # 3. Last-K MLP
+        # 시퀀스 전체보다는 '마지막 순간'이 패스 성공에 더 중요할 수 있음
+        # 그래서 마지막 K개의 정보만 따로 빼서 MLP(신경망)로 한 번 더 가공함
+        # *2인 이유: Bi-LSTM이라서 순방향+역방향 히든 스테이트가 합쳐져 있음
         self.lastk_mlp = nn.Sequential(
-            nn.Linear(hidden_dim * k_last, hidden_dim),
-            nn.ReLU(),
+            nn.Linear(hidden_dim * 2 * k_last, hidden_dim),
+            nn.ReLU(),       # 활성화 함수 (비선형성 추가)
+            nn.Dropout(0.2)  # 과적합 방지 (일부 뉴런 끄기)
         )
         
-        # 4. 최종 예측 레이어
-        # LSTM 마지막 상태(맥락 정보) + Last-K 정보(최근 정보) 합쳐서
-        # 최종적으로 x, y 좌표 2개 예측
-        self.fc = nn.Linear(hidden_dim * 2, 2)
-
-    def forward(self, seq, ev, rs, lengths):
-        """
-        모델의 Forward 과정
+        # 4. 최종 퓨전 레이어 (Final Fusion)
+        # [전체 문맥] + [마지막 순간 정보] + [공격 스타일] + [통계 정보]를 모두 합침
+        fusion_dim = (hidden_dim * 2) + hidden_dim + cluster_emb_dim + epi_feat_dim
         
-        Args:
-            seq (Tensor): 수치형 피쳐 시퀀스 (Batch, Time, NumFeats)
-            ev (Tensor): 이벤트 인덱스 시퀀스 (Batch, Time)
-            rs (Tensor): 결과 인덱스 시퀀스 (Batch, Time)
-            lengths (Tensor): 각 시퀀스 실제 길이 (Batch,)
-        """
-        # 1. 임베딩(Embedding) 적용
-        ev_e = self.event_emb(ev) # (B, T, event_emb_dim)
-        rs_e = self.result_emb(rs) # (B, T, result_emb_dim)
-        
-        # 2. 입력 벡터 생성 (수치형 + 임베딩)
-        x = torch.cat([seq, ev_e, rs_e], dim=-1) # (B, T, InputDim)
+        # 최종적으로 X, Y 좌표 2개를 예측
+        self.head = nn.Sequential(
+            nn.Linear(fusion_dim, 128),
+            nn.BatchNorm1d(128), # 데이터 분포를 정돈하여 학습 안정화
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 2) # 출력: end_x, end_y
+        )
 
-        # 3. 패킹(Packing) - 가변 길이 시퀀스 효율적으로 처리
-        # 패딩된 0 부분은 계산하지 않도록 해, 성능과 정확도 높임
-        # cpu() -> GPU에서 실행할 때 메모리 효율화
+    def forward(self, seq, ev, rs, lengths, cluster_id, epi_feats):
+        # 1. 시퀀스 데이터 준비
+        ev_e = self.event_emb(ev) # 이벤트 ID -> 벡터
+        rs_e = self.result_emb(rs) # 결과 ID -> 벡터
+        x = torch.cat([seq, ev_e, rs_e], dim=-1) # 모든 정보를 이어 붙임
+
+        # 패킹(Packing): 패딩된 0 부분은 연산하지 않도록 압축 (속도 효율)
         packed = pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
+        packed_out, (h_n, _) = self.lstm(packed)
+        out_padded, _ = pad_packed_sequence(packed_out, batch_first=True) # 다시 압축 해제
         
-        # LSTM 통과
-        packed_out, (h_n, c_n) = self.lstm(packed)
+        # 2. 전체 문맥 추출 (Global Context)
+        # LSTM의 맨 마지막 상태(Hidden State)를 가져옴
+        # Bi-LSTM이므로 순방향 마지막(h_n[-2]) + 역방향 마지막(h_n[-1]) 결합
+        h_fwd = h_n[-2]
+        h_bwd = h_n[-1]
+        h_context = torch.cat([h_fwd, h_bwd], dim=-1) 
         
-        # 언패킹(Unpacking) - 다시 원래 (Batch, Time, Hidden) 형태로 복원
-        out_padded, _ = pad_packed_sequence(packed_out, batch_first=True)
-
-        # 4. 전체 맥락 정보 (Context)
-        # h_n[-1]은 LSTM이 시퀀스를 끝까지 읽고 난 후의 최종 요약 정보
-        h_context = h_n[-1]
-        
-        # 5. 최근 K개 정보 (Recent Context) 추출
-        # 시퀀스가 끝나기 직전 K개 스텝이 패스 성공 여부에 가장 중요할 것이라는 가설
-        B, T, H = out_padded.size()
+        # 3. 세부 문맥 추출 (Local Context)
+        # 시퀀스의 끝부분 K개를 슬라이싱해서 가져옴
+        B, T, H2 = out_padded.size()
         lastk_list = []
 
         for i in range(B):
             L = lengths[i].item() # 실제 길이
-            end = L
-            start = max(0, end - self.k_last) # 끝에서 K개 전부터
+            start = max(0, L - self.k_last) # 끝에서 K번째 위치
+            lastk = out_padded[i, start:L]
             
-            # 유효한 마지막 구간 추출
-            lastk = out_padded[i, start:end]
-            
-            # 만약 시퀀스 길이가 K보다 짧으면, 부족한 부분은 0으로 채움 (Padding)
+            # 혹시 길이가 K보다 짧으면 0으로 채움
             if lastk.size(0) < self.k_last:
-                pad = torch.zeros(self.k_last - lastk.size(0), H, device=seq.device)
+                pad = torch.zeros(self.k_last - lastk.size(0), H2, device=seq.device)
                 lastk = torch.cat([pad, lastk], dim=0)
             
-            # (K, Hidden) -> (K * Hidden) 으로 펼침
-            lastk_list.append(lastk.reshape(-1))
+            lastk_list.append(lastk.reshape(-1)) # 일렬로 펼침
 
         lastk_tensor = torch.stack(lastk_list)
+        h_lastk = self.lastk_mlp(lastk_tensor) # MLP 통과
         
-        # Last-K 정보를 MLP 통과시켜 요약
-        h_lastk = self.lastk_mlp(lastk_tensor)
+        # 4. 하이브리드 특징 준비
+        c_emb = self.cluster_emb(cluster_id) # 클러스터 ID -> 벡터
         
-        # 6. 최종 결합 및 예측
-        # 전체 맥락(h_context) + 최근 맥락(h_lastk) 결합
-        h = torch.cat([h_context, h_lastk], dim=1)
+        # 5. 모든 정보 융합 및 예측 (Fusion)
+        # [전체] + [최근] + [스타일] + [통계]
+        combined = torch.cat([h_context, h_lastk, c_emb, epi_feats], dim=1)
+        out = self.head(combined) # 최종 좌표 예측
         
-        # (x, y) 예측값 출력
-        out = self.fc(h)
         return out
