@@ -50,7 +50,10 @@ def main():
     for epoch in range(1, config.EPOCHS + 1):
         model.train()
         total_loss = 0
-        for seq, ev, rs, lengths, tgt in train_loader:
+    
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch}/{config.EPOCHS}")
+        
+        for seq, ev, rs, lengths, tgt in progress_bar:
             seq, ev, rs, lengths, tgt = seq.to(config.DEVICE), ev.to(config.DEVICE), rs.to(config.DEVICE), lengths.to(config.DEVICE), tgt.to(config.DEVICE)
             
             optimizer.zero_grad()
@@ -58,10 +61,14 @@ def main():
             loss = criterion(pred, tgt)
             loss.backward()
             optimizer.step()
+            
             total_loss += loss.item() * seq.size(0)
+            
+            progress_bar.set_postfix({'batch_loss': f"{loss.item():.4f}"})
         
         train_loss = total_loss / len(train_loader.dataset)
 
+        # Valid
         model.eval()
         dists = []
         with torch.no_grad():
@@ -78,12 +85,13 @@ def main():
                 dists.append(np.sqrt((px - tx)**2 + (py - ty)**2))
         
         mean_dist = np.concatenate(dists).mean()
-        print(f"[Epoch {epoch}] Loss: {train_loss:.4f} | Mean Dist: {mean_dist:.4f}")
+        
+        print(f"\t[Result] Train Loss: {train_loss:.4f} | Valid Mean Dist: {mean_dist:.4f}")
 
         if mean_dist < best_dist:
             best_dist = mean_dist
             torch.save(model.state_dict(), config.SAVE_MODEL_PATH)
-            print(f"--> Best model saved (Dist: {best_dist:.4f})")
+            print(f"\t--> Best model saved (Dist: {best_dist:.4f})")
 
 if __name__ == "__main__":
     main()
