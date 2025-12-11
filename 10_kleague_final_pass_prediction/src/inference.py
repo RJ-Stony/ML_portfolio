@@ -12,14 +12,30 @@ from model import FinalPassLSTMWithLastK
 def load_all_test_files(test_meta, base_dir="../Data"):
     cache = {}
     paths = test_meta["path"].unique()
+    success_cnt = 0
+    fail_cnt = 0
+    
+    print(f"DEBUG: Looking for data in {os.path.abspath(base_dir)}")
+    
     for path in tqdm(paths, desc="Loading test files"):
-        clean = path[1:]
+        clean = path.replace("./", "")  
+        clean = os.path.normpath(clean) 
         full_path = os.path.join(base_dir, clean)
+        
         try:
             df = pd.read_csv(full_path)
             cache[path] = df
+            success_cnt += 1
         except FileNotFoundError:
-            pass
+            if fail_cnt == 0:
+                print(f"DEBUG(First Fail): Cannot find {os.path.abspath(full_path)}")
+            fail_cnt += 1
+            
+    print(f"DEBUG: Successfully loaded {success_cnt} files. Failed: {fail_cnt}")
+    
+    if success_cnt == 0:
+        print("CRITICAL WARNING: No files loaded! Please check if 'test' folder exists in '../Data'.")
+        
     return cache
 
 def main():
